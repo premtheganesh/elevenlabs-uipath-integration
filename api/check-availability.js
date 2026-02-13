@@ -65,7 +65,7 @@ async function getJobOutputByCorrelationId(correlationId, retryCount = 0) {
   console.log('URL:', jobsUrl + filter);
   console.log('CorrelationId:', correlationId);
   console.log('Tenant:', CONFIG.ORCHESTRATOR_TENANT);
-  console.log('Folder ID:', CONFIG.ORCHESTRATOR_FOLDER_ID);
+  console.log('Folder ID:', CONFIG.ORCHESTRATOR_FOLDER_KEY);
   
   const response = await fetch(jobsUrl + filter, {
     method: 'GET',
