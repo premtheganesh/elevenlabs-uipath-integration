@@ -98,30 +98,37 @@ async function startJob(inputData) {
 async function pollJobCompletion(jobKey, attempt = 0) {
   const token = await getOAuthToken();
   
-  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs`;
-  const filter = `?$filter=Key eq '${jobKey}'`;
+  // FIXED: Proper OData URL with query parameter (not path parameter)
+  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq guid'${jobKey}'`;
   
-  const response = await fetch(jobUrl + filter, {
+  console.log(`Polling attempt ${attempt + 1}/${CONFIG.MAX_POLL_ATTEMPTS}`);
+  console.log('URL:', jobUrl);
+  
+  const response = await fetch(jobUrl, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
       'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
       'X-UIPATH-FolderKey': CONFIG.FOLDER_KEY
     }
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to fetch job:', response.status, errorText);
     throw new Error(`Failed to fetch job: ${response.status}`);
   }
 
   const data = await response.json();
   
   if (!data.value || data.value.length === 0) {
+    console.error('Job not found in response:', data);
     throw new Error('Job not found');
   }
 
   const job = data.value[0];
-  console.log(`Polling job (attempt ${attempt + 1}/${CONFIG.MAX_POLL_ATTEMPTS}): State = ${job.State}`);
+  console.log(`Job state: ${job.State}`);
   
   if (job.State === 'Successful') {
     console.log('Job completed successfully!');
@@ -141,14 +148,15 @@ async function pollJobCompletion(jobKey, attempt = 0) {
     return result;
     
   } else if (job.State === 'Faulted' || job.State === 'Stopped') {
-    throw new Error(`Job failed with state: ${job.State}`);
+    console.error('Job failed. Info:', job.Info);
+    throw new Error(`Job failed with state: ${job.State}. Info: ${job.Info || 'No details'}`);
     
   } else if (attempt >= CONFIG.MAX_POLL_ATTEMPTS) {
     throw new Error(`Job did not complete within ${CONFIG.MAX_POLL_ATTEMPTS} attempts`);
     
   } else {
     // Job still running, wait and retry
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
     return await pollJobCompletion(jobKey, attempt + 1);
   }
 }
