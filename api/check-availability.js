@@ -5,7 +5,8 @@ const fetch = require('node-fetch');
 const CONFIG = {
   ORCHESTRATOR_URL: 'https://cloud.uipath.com/leaniar',
   ORCHESTRATOR_TENANT: 'default',
-  FOLDER_ID: '3751978',  // Use numeric Folder ID
+  FOLDER_KEY: 'f3a946f0-4c9a-479e-a63e-e4e82489dc02',  // From release info
+  ORGANIZATION_UNIT_ID: 1075762,  // Numeric ID from release info
   RELEASE_KEY: '17da421f-3373-4ae7-bd9f-95fc6417d104',
   CLIENT_ID: process.env.CLIENT_ID,
   CLIENT_SECRET: process.env.CLIENT_SECRET,
@@ -99,7 +100,7 @@ module.exports = async (req, res) => {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
-        'X-UIPATH-OrganizationUnitId': CONFIG.FOLDER_ID
+        'X-UIPATH-OrganizationUnitId': CONFIG.ORGANIZATION_UNIT_ID.toString()
       },
       body: JSON.stringify(requestBody)
     });
