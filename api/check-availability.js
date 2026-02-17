@@ -1,15 +1,14 @@
-// Check Availability - StartJobs Synchronous Pattern
+// Check Availability - Best Practice: Server-Side Long-Polling
 const fetch = require('node-fetch');
 
 // Configuration
 const CONFIG = {
   ORCHESTRATOR_URL: 'https://cloud.uipath.com/leaniar',
   ORCHESTRATOR_TENANT: 'default',
-  FOLDER_KEY: 'f3a946f0-4c9a-479e-a63e-e4e82489dc02',
+  FOLDER_ID: '3751978',  // Use numeric Folder ID
   RELEASE_KEY: '17da421f-3373-4ae7-bd9f-95fc6417d104',
   CLIENT_ID: process.env.CLIENT_ID,
   CLIENT_SECRET: process.env.CLIENT_SECRET,
-  MAX_POLL_ATTEMPTS: 30
 };
 
 let cachedToken = null;
@@ -50,116 +49,6 @@ async function getOAuthToken() {
   return cachedToken;
 }
 
-async function startJob(inputData) {
-  const token = await getOAuthToken();
-  
-  const startJobsUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs`;
-  
-  const requestBody = {
-    startInfo: {
-      ReleaseKey: CONFIG.RELEASE_KEY,
-      Strategy: 'ModernJobsCount',
-      JobsCount: 1,
-      InputArguments: JSON.stringify(inputData)
-    }
-  };
-  
-  console.log('Starting job via StartJobs API...');
-  console.log('Input data:', inputData);
-  
-  const response = await fetch(startJobsUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
-      'X-UIPATH-FolderKey': CONFIG.FOLDER_KEY
-    },
-    body: JSON.stringify(requestBody)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('StartJobs Error:', errorText);
-    throw new Error(`StartJobs failed: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  
-  if (data.value && data.value.length > 0) {
-    const job = data.value[0];
-    console.log('Job started with Key:', job.Key);
-    return job.Key;
-  } else {
-    throw new Error('StartJobs returned no job information');
-  }
-}
-
-async function pollJobCompletion(jobKey, attempt = 0) {
-  const token = await getOAuthToken();
-  
-  // FIXED: Use simple string comparison instead of guid syntax
-  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq '${jobKey}'`;
-  
-  console.log(`Polling attempt ${attempt + 1}/${CONFIG.MAX_POLL_ATTEMPTS}`);
-  console.log('URL:', jobUrl);
-  
-  const response = await fetch(jobUrl, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
-      'X-UIPATH-FolderKey': CONFIG.FOLDER_KEY
-    }
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Failed to fetch job:', response.status, errorText);
-    throw new Error(`Failed to fetch job: ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  if (!data.value || data.value.length === 0) {
-    console.error('Job not found in response:', data);
-    throw new Error('Job not found');
-  }
-
-  const job = data.value[0];
-  console.log(`Job state: ${job.State}`);
-  
-  if (job.State === 'Successful') {
-    console.log('Job completed successfully!');
-    console.log('Raw OutputArguments:', job.OutputArguments);
-    
-    if (!job.OutputArguments) {
-      throw new Error('Job completed but has no OutputArguments');
-    }
-    
-    const outputArgs = JSON.parse(job.OutputArguments);
-    console.log('Parsed OutputArguments:', outputArgs);
-    
-    // Parse the output string (which contains our JSON)
-    const result = JSON.parse(outputArgs.output);
-    console.log('Final result:', result);
-    
-    return result;
-    
-  } else if (job.State === 'Faulted' || job.State === 'Stopped') {
-    console.error('Job failed. Info:', job.Info);
-    throw new Error(`Job failed with state: ${job.State}. Info: ${job.Info || 'No details'}`);
-    
-  } else if (attempt >= CONFIG.MAX_POLL_ATTEMPTS) {
-    throw new Error(`Job did not complete within ${CONFIG.MAX_POLL_ATTEMPTS} attempts`);
-    
-  } else {
-    // Job still running, wait and retry
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return await pollJobCompletion(jobKey, attempt + 1);
-  }
-}
-
 module.exports = async (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -188,14 +77,73 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Start job
-    const jobKey = await startJob({ date, time, duration });
+    const token = await getOAuthToken();
+    const startJobsUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs`;
     
-    // Poll for completion and get result
-    const result = await pollJobCompletion(jobKey);
+    const requestBody = {
+      startInfo: {
+        ReleaseKey: CONFIG.RELEASE_KEY,
+        Strategy: 'ModernJobsCount',
+        JobsCount: 1,
+        InputArguments: JSON.stringify({ date, time, duration }),
+        RuntimeType: 'Unattended'
+      }
+    };
+    
+    console.log('Starting synchronous job...');
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
+    
+    const response = await fetch(startJobsUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
+        'X-UIPATH-OrganizationUnitId': CONFIG.FOLDER_ID
+      },
+      body: JSON.stringify(requestBody)
+    });
 
-    console.log('Success! Returning result to client');
-    return res.status(200).json(result);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('StartJobs Error:', errorText);
+      throw new Error(`StartJobs failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Response from UiPath:', JSON.stringify(data, null, 2));
+    
+    if (data.value && data.value.length > 0) {
+      const job = data.value[0];
+      console.log('Job state:', job.State);
+      
+      if (job.State === 'Successful') {
+        console.log('Raw OutputArguments:', job.OutputArguments);
+        
+        if (!job.OutputArguments) {
+          throw new Error('Job completed but has no OutputArguments');
+        }
+        
+        const outputArgs = JSON.parse(job.OutputArguments);
+        console.log('Parsed OutputArguments:', outputArgs);
+        
+        // The output is directly in the outputArgs object based on your Response activity
+        const result = outputArgs;
+        
+        console.log('Success! Returning result to client:', result);
+        return res.status(200).json(result);
+        
+      } else if (job.State === 'Faulted' || job.State === 'Stopped') {
+        console.error('Job failed. Info:', job.Info);
+        throw new Error(`Job failed with state: ${job.State}. Info: ${job.Info || 'No details'}`);
+        
+      } else {
+        // Job is still pending/running - shouldn't happen with synchronous call
+        throw new Error(`Unexpected job state: ${job.State}`);
+      }
+    } else {
+      throw new Error('StartJobs returned no job information');
+    }
 
   } catch (error) {
     console.error('Error:', error);
