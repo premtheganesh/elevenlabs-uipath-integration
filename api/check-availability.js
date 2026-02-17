@@ -94,7 +94,7 @@ async function pollJobCompletion(jobKey, attempt = 0) {
   }
 
   const token = await getOAuthToken();
-  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq '${jobKey}'`;
+  const jobUrl = const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq '${jobKey}' and OrganizationUnitId eq ${CONFIG.ORGANIZATION_UNIT_ID}`;;
 
   console.log(`Polling attempt ${attempt + 1}/${CONFIG.MAX_POLL_ATTEMPTS}...`);
 
