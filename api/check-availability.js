@@ -71,7 +71,6 @@ async function startJob(inputData) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
       'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
       'X-UIPATH-FolderKey': CONFIG.FOLDER_KEY
     },
