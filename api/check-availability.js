@@ -98,8 +98,8 @@ async function startJob(inputData) {
 async function pollJobCompletion(jobKey, attempt = 0) {
   const token = await getOAuthToken();
   
-  // FIXED: Proper OData URL with query parameter (not path parameter)
-  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq guid'${jobKey}'`;
+  // FIXED: Use simple string comparison instead of guid syntax
+  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq '${jobKey}'`;
   
   console.log(`Polling attempt ${attempt + 1}/${CONFIG.MAX_POLL_ATTEMPTS}`);
   console.log('URL:', jobUrl);
