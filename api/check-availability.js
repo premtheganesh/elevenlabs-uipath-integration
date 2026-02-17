@@ -50,6 +50,66 @@ async function getOAuthToken() {
   return cachedToken;
 }
 
+async function pollJobCompletion(token, jobKey, attempt = 0) {
+  const MAX_ATTEMPTS = 30;
+  
+  console.log(`Polling attempt ${attempt + 1}/${MAX_ATTEMPTS}`);
+  
+  // Use OData filter to get the specific job
+  const jobUrl = `${CONFIG.ORCHESTRATOR_URL}/${CONFIG.ORCHESTRATOR_TENANT}/orchestrator_/odata/Jobs?$filter=Key eq '${jobKey}'`;
+  
+  const response = await fetch(jobUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'X-UIPATH-TenantName': CONFIG.ORCHESTRATOR_TENANT,
+      'X-UIPATH-OrganizationUnitId': CONFIG.ORGANIZATION_UNIT_ID.toString()
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Failed to fetch job:', response.status, errorText);
+    throw new Error(`Failed to fetch job: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  if (!data.value || data.value.length === 0) {
+    throw new Error('Job not found');
+  }
+
+  const job = data.value[0];
+  console.log(`Job state: ${job.State}`);
+  
+  if (job.State === 'Successful') {
+    console.log('Job completed successfully!');
+    console.log('Raw OutputArguments:', job.OutputArguments);
+    
+    if (!job.OutputArguments) {
+      throw new Error('Job completed but has no OutputArguments');
+    }
+    
+    const outputArgs = JSON.parse(job.OutputArguments);
+    console.log('Parsed OutputArguments:', outputArgs);
+    
+    return outputArgs;
+    
+  } else if (job.State === 'Faulted' || job.State === 'Stopped') {
+    console.error('Job failed. Info:', job.Info);
+    throw new Error(`Job failed with state: ${job.State}. Info: ${job.Info || 'No details'}`);
+    
+  } else if (attempt >= MAX_ATTEMPTS) {
+    throw new Error(`Job did not complete within ${MAX_ATTEMPTS} attempts`);
+    
+  } else {
+    // Job still running (Pending, Running, etc.)
+    console.log('Job still in progress, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    return await pollJobCompletion(token, jobKey, attempt + 1);
+  }
+}
+
 module.exports = async (req, res) => {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -116,32 +176,24 @@ module.exports = async (req, res) => {
     
     if (data.value && data.value.length > 0) {
       const job = data.value[0];
-      console.log('Job state:', job.State);
+      console.log('Job started with Key:', job.Key);
+      console.log('Initial job state:', job.State);
       
+      // If job is already successful (unlikely but possible), return immediately
       if (job.State === 'Successful') {
-        console.log('Raw OutputArguments:', job.OutputArguments);
-        
-        if (!job.OutputArguments) {
-          throw new Error('Job completed but has no OutputArguments');
-        }
-        
+        console.log('Job completed immediately!');
         const outputArgs = JSON.parse(job.OutputArguments);
-        console.log('Parsed OutputArguments:', outputArgs);
-        
-        // The output is directly in the outputArgs object based on your Response activity
-        const result = outputArgs;
-        
-        console.log('Success! Returning result to client:', result);
-        return res.status(200).json(result);
-        
-      } else if (job.State === 'Faulted' || job.State === 'Stopped') {
-        console.error('Job failed. Info:', job.Info);
-        throw new Error(`Job failed with state: ${job.State}. Info: ${job.Info || 'No details'}`);
-        
-      } else {
-        // Job is still pending/running - shouldn't happen with synchronous call
-        throw new Error(`Unexpected job state: ${job.State}`);
+        console.log('Success! Returning result to client:', outputArgs);
+        return res.status(200).json(outputArgs);
       }
+      
+      // Otherwise, poll for completion
+      console.log('Job is pending, starting to poll for completion...');
+      const result = await pollJobCompletion(token, job.Key);
+      
+      console.log('Success! Returning result to client:', result);
+      return res.status(200).json(result);
+      
     } else {
       throw new Error('StartJobs returned no job information');
     }
