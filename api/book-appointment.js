@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 const CONFIG = {
   ORCHESTRATOR_URL: 'https://cloud.uipath.com/leaniar',
   ORCHESTRATOR_TENANT: 'default',
-  ORGANIZATION_UNIT_ID: '1075762',  // Confirmed working
+  ORGANIZATION_UNIT_ID: '1075767',  // Shared/Solution 3 - book_appointment folder
   RELEASE_KEY: 'a30ee7c2-1aec-4724-b0d9-27545996c543',
   CLIENT_ID: process.env.CLIENT_ID,
   CLIENT_SECRET: process.env.CLIENT_SECRET,
